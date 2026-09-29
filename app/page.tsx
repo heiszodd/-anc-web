@@ -16,8 +16,7 @@ export default function Home() {
   const [latency, setLatency] = useState("—");
   const [sampleRate, setSampleRate] = useState("—");
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [referenceId, setReferenceId] = useState("");
-  const [errorId, setErrorId] = useState("");
+  const [microphoneId, setMicrophoneId] = useState("");
   const ctxRef = useRef<AudioContext | null>(null);
   const streamsRef = useRef<MediaStream[]>([]);
   const sourcesRef = useRef<MediaStreamAudioSourceNode[]>([]);
@@ -64,8 +63,7 @@ export default function Home() {
       const list = await navigator.mediaDevices.enumerateDevices();
       const inputs = list.filter((d) => d.kind === "audioinput");
       setDevices(inputs);
-      if (!referenceId && inputs[0]?.deviceId) setReferenceId(inputs[0].deviceId);
-      if (!errorId && inputs[1]?.deviceId) setErrorId(inputs[1].deviceId);
+      if (!microphoneId && inputs[0]?.deviceId) setMicrophoneId(inputs[0].deviceId);
       setMessage("Microphone permission granted");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Microphone permission was denied");
@@ -85,14 +83,14 @@ export default function Home() {
   const start = async () => {
     if (status !== "idle" && status !== "error") return;
     setStatus("starting");
-    setMessage(mode === "simulation" ? "Starting controlled ANC simulation…" : "Requesting two microphone inputs…");
+    setMessage(mode === "simulation" ? "Starting controlled ANC simulation…" : "Requesting microphone input…");
 
     try {
       const ctx = new AudioContext({ latencyHint: "interactive", sampleRate: 48000 });
       await ctx.audioWorklet.addModule("/anc-processor.js");
 
       const node = new AudioWorkletNode(ctx, "anc-fxlms", {
-        numberOfInputs: 2,
+        numberOfInputs: 1,
         numberOfOutputs: 1,
         channelCount: 1,
         channelCountMode: "explicit",
@@ -105,23 +103,17 @@ export default function Home() {
       if (mode === "simulation") {
         node.port.postMessage({ type: "mode", mode: "simulation" });
       } else {
-        if (!referenceId || !errorId) {
-          throw new Error("Select a reference microphone and an error microphone first.");
-        }
-        if (referenceId === errorId) {
-          throw new Error("Reference and error microphones must be different devices.");
+        if (!microphoneId) {
+          throw new Error("Select a microphone first.");
         }
 
         const common = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
-        const refStream = await navigator.mediaDevices.getUserMedia({ audio: { ...common, deviceId: { exact: referenceId } } });
-        const errStream = await navigator.mediaDevices.getUserMedia({ audio: { ...common, deviceId: { exact: errorId } } });
-        streams = [refStream, errStream];
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: { ...common, deviceId: { exact: microphoneId } } });
+        streams = [micStream];
 
-        const ref = ctx.createMediaStreamSource(refStream);
-        const err = ctx.createMediaStreamSource(errStream);
-        ref.connect(node, 0, 0);
-        err.connect(node, 0, 1);
-        sources = [ref, err];
+        const mic = ctx.createMediaStreamSource(micStream);
+        mic.connect(node, 0, 0);
+        sources = [mic];
         node.port.postMessage({ type: "mode", mode: "hardware" });
       }
 
@@ -149,7 +141,7 @@ export default function Home() {
       const l = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
       setLatency(l ? (l * 1000).toFixed(1) + " ms" : "browser default");
       setStatus("running");
-      setMessage(mode === "simulation" ? "FxLMS simulation running" : "Experimental two-mic FxLMS running");
+      setMessage(mode === "simulation" ? "FxLMS simulation running" : "Experimental single-mic anti-noise running");
 
       node.port.onmessage = (event) => {
         if (event.data?.type === "metrics") {
@@ -195,13 +187,13 @@ export default function Home() {
         <div>
           <p className="kicker">FxLMS RESEARCH PROTOTYPE</p>
           <h2>Cancel the residual.</h2>
-          <p className="sub">Reference mic → adaptive filter → headphones → error mic → feedback to the controller.</p>
+          <p className="sub">Microphone → anti-noise processor → headphones.</p>
         </div>
       </section>
 
       <section className="panel">
         <div className="mode-tabs">
-          <button className={mode === "hardware" ? "selected" : ""} onClick={() => { stop(); setMode("hardware"); }}>Two-mic hardware</button>
+          <button className={mode === "hardware" ? "selected" : ""} onClick={() => { stop(); setMode("hardware"); }}>One-mic hardware</button>
           <button className={mode === "simulation" ? "selected" : ""} onClick={() => { stop(); setMode("simulation"); }}>Simulation</button>
         </div>
 
@@ -209,18 +201,17 @@ export default function Home() {
           <>
             <div className="permission-row">
               <button className="secondary" onClick={requestMicrophone}>Allow microphone access</button>
-              <span>Required to detect and select your device microphones.</span>
+              <span>Required to detect and select your device microphone.</span>
             </div>
-            <div className="device-grid">
-            <label><span>REFERENCE MICROPHONE</span><select value={referenceId} onChange={(e) => setReferenceId(e.target.value)}><option value="">Select input…</option>{devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone " + d.deviceId.slice(0, 6)}</option>)}</select></label>
-            <label><span>ERROR MICROPHONE</span><select value={errorId} onChange={(e) => setErrorId(e.target.value)}><option value="">Select input…</option>{devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone " + d.deviceId.slice(0, 6)}</option>)}</select></label>
+            <div className="device-grid single">
+            <label><span>MICROPHONE</span><select value={microphoneId} onChange={(e) => setMicrophoneId(e.target.value)}><option value="">Select input…</option>{devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone " + d.deviceId.slice(0, 6)}</option>)}</select></label>
           </div>
           </>
         ) : (
           <div className="simulation-note">Simulation uses a known synthetic secondary path and a correlated noise source. It validates the adaptive controller without relying on room acoustics.</div>
         )}
 
-        <div className="meter-head"><span>{mode === "simulation" ? "REFERENCE / RESIDUAL" : "REFERENCE / RESIDUAL"}</span><strong>{Math.round(level)}% / {Math.round(residual)}%</strong></div>
+        <div className="meter-head"><span>{mode === "simulation" ? "MIC / RESIDUAL" : "REFERENCE / RESIDUAL"}</span><strong>{Math.round(level)}% / {Math.round(residual)}%</strong></div>
         <div className="dual-meter"><div style={{ width: level + "%" }} /><div style={{ width: residual + "%" }} /></div>
 
         <div className="controls">
@@ -237,7 +228,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="warning"><strong>Hardware requirements</strong><p>Real acoustic cancellation requires separate reference and error microphones. Use wired headphones, keep output low, and never use this while driving. Bluetooth latency can violate the causality constraint and prevent useful cancellation.</p></section>
+      <section className="warning"><strong>Hardware requirements</strong><p>One-mic mode is an experimental anti-noise processor, not a conventional closed-loop ANC system. Use wired headphones, keep output low, and never use this while driving. Bluetooth latency can prevent useful cancellation.</p></section>
       <footer>Processing stays in the browser. No microphone stream is uploaded by this application.</footer>
     </main>
   );
