@@ -7,7 +7,7 @@ type Status = "idle" | "starting" | "running" | "error";
 export default function Home() {
   const [status,setStatus]=useState<Status>("idle");
   const [message,setMessage]=useState("Ready");
-  const [antiNoise,setAntiNoise]=useState(0.2);
+  const [antiNoise,setAntiNoise]=useState(0.5);
   const [delayMs,setDelayMs]=useState(0);
   const [level,setLevel]=useState(0);
   const [latency,setLatency]=useState("—");
@@ -16,7 +16,7 @@ export default function Home() {
   const streamRef=useRef<MediaStream|null>(null);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const workletRef=useRef<AudioWorkletNode|null>(null);
-  const analyserRef=useRef<AnalyserNode|null>(null);
+  const analyserRef=useRef<AnalyserNode|null>(null);\n  const gainRef=useRef<GainNode|null>(null);
   const rafRef=useRef<number|null>(null);
 
   const stop=()=>{
@@ -24,10 +24,10 @@ export default function Home() {
     rafRef.current=null;
     workletRef.current?.disconnect();
     analyserRef.current?.disconnect();
-    sourceRef.current?.disconnect();
+    sourceRef.current?.disconnect();\n    gainRef.current?.disconnect();
     streamRef.current?.getTracks().forEach(t=>t.stop());
     ctxRef.current?.close();
-    ctxRef.current=null; streamRef.current=null; sourceRef.current=null; workletRef.current=null; analyserRef.current=null;
+    ctxRef.current=null; streamRef.current=null; sourceRef.current=null; workletRef.current=null; analyserRef.current=null; gainRef.current=null;
     setLevel(0); setStatus("idle"); setMessage("Ready"); setLatency("—"); setSampleRate("—");
   };
 
@@ -40,13 +40,13 @@ export default function Home() {
       await ctx.audioWorklet.addModule("/anc-processor.js");
       const source=ctx.createMediaStreamSource(stream);
       const node=new AudioWorkletNode(ctx,"anc-processor",{numberOfInputs:1,numberOfOutputs:1,channelCount:1,channelCountMode:"explicit",channelInterpretation:"speakers"});
-      const analyser=ctx.createAnalyser();
+      const gain=ctx.createGain();\n      gain.gain.value=1;\n      const analyser=ctx.createAnalyser();
       analyser.fftSize=512;
       analyser.smoothingTimeConstant=0.75;
-      source.connect(node); node.connect(analyser); analyser.connect(ctx.destination);
+      source.connect(node); node.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);
       await ctx.resume();
       node.port.postMessage({type:"config",antiNoise,delayMs});
-      ctxRef.current=ctx; streamRef.current=stream; sourceRef.current=source; workletRef.current=node; analyserRef.current=analyser;
+      ctxRef.current=ctx; streamRef.current=stream; sourceRef.current=source; workletRef.current=node; analyserRef.current=analyser; gainRef.current=gain;
       setSampleRate(String(ctx.sampleRate));
       const l=(ctx.baseLatency||0)+(ctx.outputLatency||0);
       setLatency(l ? (l*1000).toFixed(1)+" ms" : "browser default");
@@ -94,7 +94,7 @@ export default function Home() {
         <div><span>EST. LATENCY</span><strong>{latency}</strong></div>
       </div>
     </section>
-    <section className="warning"><strong>Experimental ANC</strong><p>Simple phase inversion is not true active noise cancellation. Real ANC needs calibrated mic/headphone acoustics, very low latency and usually an error microphone. Use wired headphones, keep the level low, and stop if you hear feedback or discomfort.</p></section>
+    <section className="warning"><strong>Experimental ANC</strong><p>This is a live audio-output experiment, not guaranteed ANC. Simple phase inversion is not true active noise cancellation. Real ANC needs calibrated mic/headphone acoustics, very low latency and usually an error microphone. Use wired headphones, keep the level low, and stop if you hear feedback or discomfort.</p></section>
     <footer>Runs locally in your browser. Microphone audio is processed through Web Audio and is not uploaded by this app.</footer>
   </main>;
 }
