@@ -61,12 +61,14 @@ class FxLMSProcessor extends AudioWorkletProcessor {
         e = noise;
       } else {
         xRef = ref?.[n] ?? 0;
-        e = err?.[n] ?? 0;
+        // Single-mic mode has no independent error sensor. Use the microphone
+        // level for monitoring only; do not adapt against the same signal.
+        e = xRef;
       }
 
       this.push(this.x, xRef);
 
-      const y = this.dot(this.W, this.x);
+      const y = this.mode === "simulation" ? this.dot(this.W, this.x) : -xRef;
       const limited = Math.max(-1, Math.min(1, y * this.output));
       output[n] = limited;
 
@@ -85,9 +87,11 @@ class FxLMSProcessor extends AudioWorkletProcessor {
         this.xf[k] = v;
       }
 
-      const norm = 0.000001 + this.dot(this.xf, this.xf);
-      const step = this.mu / norm;
-      for (let k = 0; k < this.W.length; k++) this.W[k] -= step * e * this.xf[k];
+      if (this.mode === "simulation") {
+        const norm = 0.000001 + this.dot(this.xf, this.xf);
+        const step = this.mu / norm;
+        for (let k = 0; k < this.W.length; k++) this.W[k] -= step * e * this.xf[k];
+      }
 
       refPower += xRef * xRef;
       errPower += e * e;
