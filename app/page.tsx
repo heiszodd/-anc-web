@@ -49,6 +49,30 @@ export default function Home() {
     setSampleRate("—");
   };
 
+  const requestMicrophone = async () => {
+    try {
+      setMessage("Requesting microphone permission…");
+      const permissionStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+      });
+      permissionStream.getTracks().forEach((track) => track.stop());
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const inputs = list.filter((d) => d.kind === "audioinput");
+      setDevices(inputs);
+      if (!referenceId && inputs[0]?.deviceId) setReferenceId(inputs[0].deviceId);
+      if (!errorId && inputs[1]?.deviceId) setErrorId(inputs[1].deviceId);
+      setMessage("Microphone permission granted");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Microphone permission was denied");
+      setStatus("error");
+    }
+  };
+
   const loadDevices = async () => {
     try {
       const list = await navigator.mediaDevices.enumerateDevices();
@@ -143,7 +167,11 @@ export default function Home() {
 
   useEffect(() => {
     loadDevices();
-    return () => stop();
+    navigator.mediaDevices?.addEventListener("devicechange", loadDevices);
+    return () => {
+      navigator.mediaDevices?.removeEventListener("devicechange", loadDevices);
+      stop();
+    };
   }, []);
 
   useEffect(() => {
@@ -178,10 +206,16 @@ export default function Home() {
         </div>
 
         {mode === "hardware" ? (
-          <div className="device-grid">
+          <>
+            <div className="permission-row">
+              <button className="secondary" onClick={requestMicrophone}>Allow microphone access</button>
+              <span>Required to detect and select your device microphones.</span>
+            </div>
+            <div className="device-grid">
             <label><span>REFERENCE MICROPHONE</span><select value={referenceId} onChange={(e) => setReferenceId(e.target.value)}><option value="">Select input…</option>{devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone " + d.deviceId.slice(0, 6)}</option>)}</select></label>
             <label><span>ERROR MICROPHONE</span><select value={errorId} onChange={(e) => setErrorId(e.target.value)}><option value="">Select input…</option>{devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Microphone " + d.deviceId.slice(0, 6)}</option>)}</select></label>
           </div>
+          </>
         ) : (
           <div className="simulation-note">Simulation uses a known synthetic secondary path and a correlated noise source. It validates the adaptive controller without relying on room acoustics.</div>
         )}
