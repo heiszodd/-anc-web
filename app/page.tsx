@@ -99,9 +99,12 @@ export default function Home() {
 
       let sources: MediaStreamAudioSourceNode[] = [];
       let streams: MediaStream[] = [];
+      const outputGain = ctx.createGain();
 
       if (mode === "simulation") {
         node.port.postMessage({ type: "mode", mode: "simulation" });
+        node.connect(outputGain);
+        outputGain.gain.value = 0.35;
       } else {
         if (!microphoneId) {
           throw new Error("Select a microphone first.");
@@ -112,23 +115,26 @@ export default function Home() {
         streams = [micStream];
 
         const mic = ctx.createMediaStreamSource(micStream);
-        mic.connect(node, 0, 0);
         sources = [mic];
-        node.port.postMessage({ type: "mode", mode: "hardware" });
+
+        // Hardware mode deliberately bypasses the adaptive worklet. With one
+        // microphone there is no independent error signal, so direct inversion
+        // is the only honest single-mic hardware path and also gives us a
+        // deterministic way to verify that microphone audio reaches output.
+        outputGain.gain.value = -Math.min(0.8, output);
+        mic.connect(outputGain);
       }
 
-      const outputGain = ctx.createGain();
-      outputGain.gain.value = mode === "simulation" ? 0.35 : output;
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
       analyser.smoothingTimeConstant = 0.8;
 
-      node.connect(outputGain);
+      outputGain.connect(analyser);
       outputGain.connect(analyser);
       analyser.connect(ctx.destination);
 
       await ctx.resume();
-      node.port.postMessage({ type: "config", mu, output: mode === "simulation" ? 0.35 : output });
+      if (mode === "simulation") node.port.postMessage({ type: "config", mu, output: 0.35 });
 
       ctxRef.current = ctx;
       streamsRef.current = streams;
@@ -228,7 +234,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="warning"><strong>Hardware requirements</strong><p>One-mic mode is an experimental anti-noise processor, not a conventional closed-loop ANC system. Use wired headphones, keep output low, and never use this while driving. Bluetooth latency can prevent useful cancellation.</p></section>
+      <section className="warning"><strong>Hardware mode</strong><p>The microphone signal is inverted and sent directly to the headphones. This is a single-mic phase-inversion experiment, not closed-loop ANC. Use wired headphones, keep output low, and never use this while driving.</p></section>
       <footer>Processing stays in the browser. No microphone stream is uploaded by this application.</footer>
     </main>
   );
