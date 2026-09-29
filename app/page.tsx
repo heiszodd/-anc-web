@@ -130,7 +130,6 @@ export default function Home() {
       analyser.smoothingTimeConstant = 0.8;
 
       outputGain.connect(analyser);
-      outputGain.connect(analyser);
       analyser.connect(ctx.destination);
 
       await ctx.resume();
