@@ -16,7 +16,8 @@ export default function Home() {
   const streamRef=useRef<MediaStream|null>(null);
   const sourceRef=useRef<MediaStreamAudioSourceNode|null>(null);
   const workletRef=useRef<AudioWorkletNode|null>(null);
-  const analyserRef=useRef<AnalyserNode|null>(null);\n  const gainRef=useRef<GainNode|null>(null);
+  const analyserRef=useRef<AnalyserNode|null>(null);
+  const gainRef=useRef<GainNode|null>(null);
   const rafRef=useRef<number|null>(null);
 
   const stop=()=>{
@@ -24,7 +25,8 @@ export default function Home() {
     rafRef.current=null;
     workletRef.current?.disconnect();
     analyserRef.current?.disconnect();
-    sourceRef.current?.disconnect();\n    gainRef.current?.disconnect();
+    sourceRef.current?.disconnect();
+    gainRef.current?.disconnect();
     streamRef.current?.getTracks().forEach(t=>t.stop());
     ctxRef.current?.close();
     ctxRef.current=null; streamRef.current=null; sourceRef.current=null; workletRef.current=null; analyserRef.current=null; gainRef.current=null;
@@ -40,7 +42,9 @@ export default function Home() {
       await ctx.audioWorklet.addModule("/anc-processor.js");
       const source=ctx.createMediaStreamSource(stream);
       const node=new AudioWorkletNode(ctx,"anc-processor",{numberOfInputs:1,numberOfOutputs:1,channelCount:1,channelCountMode:"explicit",channelInterpretation:"speakers"});
-      const gain=ctx.createGain();\n      gain.gain.value=1;\n      const analyser=ctx.createAnalyser();
+      const gain=ctx.createGain();
+      gain.gain.value=1;
+      const analyser=ctx.createAnalyser();
       analyser.fftSize=512;
       analyser.smoothingTimeConstant=0.75;
       source.connect(node); node.connect(gain); gain.connect(analyser); analyser.connect(ctx.destination);
